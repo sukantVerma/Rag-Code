@@ -21,8 +21,7 @@ streamlit run frontend/streamlit_app.py \
   --server.port 8501 \
   --server.address 0.0.0.0 \
   --server.headless true \
-  --server.enableCORS false \
-  --server.enableXsrfProtection false
+  --server.enableCORS false
 
 # If streamlit exits, kill backend too
 kill $BACKEND_PID

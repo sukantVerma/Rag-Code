@@ -26,8 +26,11 @@ COPY start.sh .
 
 RUN chmod +x start.sh
 
-# Create data directories and set ownership
-RUN mkdir -p data/chroma_db data/faiss_index data/pdfs data/repos
+# Create data directories and transfer ownership to non-root user
+RUN mkdir -p data/chroma_db data/faiss_index data/pdfs data/repos && \
+    chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8000
 EXPOSE 8501

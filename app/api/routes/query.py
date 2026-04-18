@@ -1,12 +1,13 @@
-"""Query API route: retrieve context and generate an answer with Gemini."""
+"""Query API route: retrieve context and generate an answer with Claude."""
 
+import asyncio
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
 from app.api.schemas import QueryRequest, QueryResponse, SourceInfo
-from app.llm.claude_client import GeminiClient
+from app.llm.claude_client import ClaudeClient
 from app.retrieval.retriever import MultiSourceRetriever
 
 logger = logging.getLogger(__name__)
@@ -14,11 +15,11 @@ router = APIRouter(tags=["query"])
 
 # Singletons — initialised lazily via dependency injection in main.py
 _retriever: MultiSourceRetriever | None = None
-_claude: GeminiClient | None = None
+_claude: ClaudeClient | None = None
 
 
 def init_query_dependencies(
-    retriever: MultiSourceRetriever, claude: GeminiClient
+    retriever: MultiSourceRetriever, claude: ClaudeClient
 ) -> None:
     """Inject shared singletons into the query module."""
     global _retriever, _claude
@@ -54,8 +55,9 @@ async def query(body: QueryRequest) -> QueryResponse:
         logger.exception("Retrieval failed")
         raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}")
 
+    # Run sync Anthropic HTTP call in thread pool to avoid blocking the event loop
     try:
-        answer = _claude.query(body.question, chunks)
+        answer = await asyncio.to_thread(_claude.query, body.question, chunks)
     except Exception as exc:
         logger.exception("LLM query failed")
         raise HTTPException(status_code=500, detail=f"LLM error: {exc}")

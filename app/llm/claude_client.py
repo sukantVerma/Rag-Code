@@ -1,10 +1,9 @@
-"""Gemini LLM client for generating answers from retrieved context."""
+"""Claude LLM client for generating answers from retrieved context."""
 
 import logging
 from typing import Any
 
-from google import genai
-from google.genai import types
+import anthropic
 
 from app.config import settings
 
@@ -18,14 +17,7 @@ SYSTEM_PROMPT = (
 
 
 def _build_context_string(chunks: list[dict[str, Any]]) -> str:
-    """Format retrieved chunks into a labelled context block for the LLM.
-
-    Args:
-        chunks: List of retrieval result dicts.
-
-    Returns:
-        Formatted context string.
-    """
+    """Format retrieved chunks into a labelled context block for the LLM."""
     parts: list[str] = []
     for i, chunk in enumerate(chunks, 1):
         source = chunk.get("source", "unknown")
@@ -45,28 +37,20 @@ def _build_context_string(chunks: list[dict[str, Any]]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-class GeminiClient:
-    """Wrapper around the Google Gemini API for question answering."""
+class ClaudeClient:
+    """Wrapper around the Anthropic Claude API for question answering."""
 
     def __init__(self) -> None:
-        self._client = genai.Client(api_key=settings.gemini_api_key)
-        self._model_name = settings.gemini_llm_model
-        logger.info("Gemini LLM initialised with model '%s'", self._model_name)
+        self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self._model_name = settings.anthropic_model
+        logger.info("Claude LLM initialised with model '%s'", self._model_name)
 
     def query(
         self,
         user_question: str,
         retrieved_chunks: list[dict[str, Any]],
     ) -> str:
-        """Send a question + retrieved context to Gemini and return the answer.
-
-        Args:
-            user_question: The user's natural language question.
-            retrieved_chunks: List of retrieval result dicts.
-
-        Returns:
-            The model's answer as a string.
-        """
+        """Send a question + retrieved context to Claude and return the answer."""
         if not retrieved_chunks:
             context_block = "(No relevant context was found.)"
         else:
@@ -78,19 +62,18 @@ class GeminiClient:
         )
 
         logger.info(
-            "Sending query to Gemini (%s) with %d context chunks",
+            "Sending query to Claude (%s) with %d context chunks",
             self._model_name,
             len(retrieved_chunks),
         )
 
-        response = self._client.models.generate_content(
+        response = self._client.messages.create(
             model=self._model_name,
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-            ),
+            max_tokens=settings.llm_max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
         )
 
-        answer = response.text
+        answer = response.content[0].text
         logger.info("Received answer (%d chars)", len(answer))
         return answer

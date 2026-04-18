@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   codedoc-rag:
-    image: localhost/codedoc-rag:latest
+    image: codedoc-rag:latest
     build:
       context: .
       dockerfile: Containerfile
@@ -17,7 +17,6 @@ services:
       - .env
     environment:
       - BACKEND_URL=http://localhost:8000
-      - GOOGLE_API_KEY=${GEMINI_API_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

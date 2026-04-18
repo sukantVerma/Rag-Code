@@ -1,6 +1,6 @@
 # CodeDoc RAG System
 
-A production-ready **Multi-Source Retrieval-Augmented Generation** system that ingests GitHub repositories and PDF documents, stores their embeddings in vector databases, and answers natural language questions using Anthropic Claude.
+A **Multi-Source Retrieval-Augmented Generation** system that ingests GitHub repositories and PDF documents, stores their embeddings in vector databases, and answers natural language questions using Anthropic Claude.
 
 ## Architecture
 
@@ -17,7 +17,8 @@ A production-ready **Multi-Source Retrieval-Augmented Generation** system that i
        │                  │
        ▼                  ▼
 ┌──────────────────────────────────┐
-│   OpenAI text-embedding-3-small  │
+│  fastembed (BAAI/bge-small-en)   │
+│  local embeddings, no API key    │
 └──────────────┬───────────────────┘
        ┌───────┴────────┐
        ▼                ▼
@@ -34,39 +35,60 @@ A production-ready **Multi-Source Retrieval-Augmented Generation** system that i
                ▼
        ┌───────────────┐
        │  Claude LLM   │
-       │  (claude-sonnet-4-20250514) │
+       │  (Anthropic)  │
        └───────────────┘
 ```
 
-## Quick Start
+## Quick Start (Local)
 
-### 1. Clone & configure
+### Prerequisites
+
+- Python 3.11+
+- An [Anthropic API key](https://console.anthropic.com)
+- Git
+
+### 1. Set up environment
 
 ```bash
-git clone <this-repo>
 cd codedoc-rag
+make setup
+# Opens .env — add your ANTHROPIC_API_KEY
+```
+
+Or manually:
+
+```bash
 cp .env.example .env
-# Edit .env and add your API keys
-```
-
-### 2. Install dependencies
-
-```bash
-python -m venv .venv
+# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r frontend/requirements.txt
 ```
 
-### 3. Run the server
+### 2. Run the backend
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+make run-backend
+# FastAPI available at http://localhost:8000
+# Swagger docs at http://localhost:8000/docs
 ```
 
-### 4. Using Podman (container)
+### 3. Run the frontend (separate terminal)
 
 ```bash
-podman-compose up --build
+make run-frontend
+# Streamlit UI at http://localhost:8501
+```
+
+## Quick Start (Docker)
+
+```bash
+cp .env.example .env
+# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+
+make docker-up
+# Backend: http://localhost:8000
+# Frontend: http://localhost:8501
 ```
 
 ## API Endpoints
@@ -100,6 +122,13 @@ curl -X POST http://localhost:8000/query \
 curl http://localhost:8000/health
 ```
 
+## Running Tests
+
+```bash
+make test
+# or: .venv/bin/pytest tests/ -v
+```
+
 ## Project Structure
 
 ```
@@ -113,13 +142,29 @@ codedoc-rag/
 │   ├── retrieval/             # Multi-source retriever + reranker
 │   ├── llm/                   # Claude API client
 │   └── api/                   # FastAPI routes and schemas
+├── frontend/
+│   └── streamlit_app.py       # Streamlit chat UI
 ├── scripts/                   # CLI ingestion script (for CI/CD)
 ├── data/                      # Persisted vector stores, PDFs, cloned repos
-├── tests/                     # Unit and integration tests
-├── Containerfile              # Podman container definition
-├── docker-compose.yml         # Podman-compatible compose file
+├── tests/                     # Unit tests
+├── Containerfile              # Container definition (Docker/Podman)
+├── docker-compose.yml         # Multi-service orchestration
+├── Makefile                   # Dev shortcuts
 └── requirements.txt
 ```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude |
+| `GITHUB_PAT` | No | GitHub PAT for private repos |
+| `ANTHROPIC_MODEL` | No | Claude model (default: `claude-sonnet-4-20250514`) |
+| `CHROMA_DB_PATH` | No | ChromaDB path (default: `./data/chroma_db`) |
+| `FAISS_INDEX_PATH` | No | FAISS index path (default: `./data/faiss_index`) |
+| `PDF_DATA_PATH` | No | PDF upload directory (default: `./data/pdfs`) |
+| `REPO_CLONE_PATH` | No | Repo clone directory (default: `./data/repos`) |
+| `BACKEND_URL` | No | Backend URL for frontend (default: `http://localhost:8000`) |
 
 ## CI/CD
 
@@ -129,25 +174,7 @@ On every push to `main`, the GitHub Actions workflow:
 2. Computes changed files via `git diff HEAD~1 HEAD`
 3. Runs incremental ingestion for only the changed files
 
-Required GitHub Secrets: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_PAT`.
-
-## Running Tests
-
-```bash
-pytest tests/ -v
-```
-
-## Environment Variables
-
-| Variable | Description |
-|---|---|
-| `OPENAI_API_KEY` | OpenAI API key for embeddings |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
-| `GITHUB_PAT` | GitHub personal access token (optional, for private repos) |
-| `CHROMA_DB_PATH` | Path to persist ChromaDB (default: `./data/chroma_db`) |
-| `FAISS_INDEX_PATH` | Path to persist FAISS index (default: `./data/faiss_index`) |
-| `PDF_DATA_PATH` | Directory for uploaded PDFs (default: `./data/pdfs`) |
-| `REPO_CLONE_PATH` | Directory for cloned repos (default: `./data/repos`) |
+Required GitHub Secrets: `ANTHROPIC_API_KEY`, `GITHUB_PAT`.
 
 ## License
 

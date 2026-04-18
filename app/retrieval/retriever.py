@@ -65,9 +65,10 @@ class MultiSourceRetriever:
         Returns:
             Merged, deduplicated, and ranked list of chunk dicts.
         """
-        embedding = self._embedder.embed_single(query)
+        # Run embedding in thread pool (ONNX inference — CPU-intensive)
+        embedding = await asyncio.to_thread(self._embedder.embed_single, query)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         chroma_task = loop.run_in_executor(
             None, self._query_chroma, embedding, top_k
         )

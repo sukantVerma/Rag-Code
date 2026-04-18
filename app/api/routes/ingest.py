@@ -1,8 +1,10 @@
 """Ingestion API routes: GitHub repos and PDF uploads."""
 
+import asyncio
 import logging
 import shutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 
@@ -40,8 +42,13 @@ def init_ingest_dependencies(
 @router.post("/github", response_model=IngestResponse)
 async def ingest_github(body: GithubIngestRequest) -> IngestResponse:
     """Clone a GitHub repo and ingest its code into ChromaDB."""
+    parsed = urlparse(body.repo_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Only HTTPS repository URLs are accepted.")
+
+    # Clone repo in thread pool (network + disk I/O — would block event loop)
     try:
-        code_files = ingest_github_repo(body.repo_url, body.pat_token)
+        code_files = await asyncio.to_thread(ingest_github_repo, body.repo_url, body.pat_token)
     except Exception as exc:
         logger.exception("GitHub ingest failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -54,11 +61,14 @@ async def ingest_github(body: GithubIngestRequest) -> IngestResponse:
             message="No supported files found in the repository.",
         )
 
-    # Chunk all files
-    all_chunks = []
-    for cf in code_files:
-        chunks = chunk_code_file(cf.content, cf.file_path, cf.language, cf.repo_name)
-        all_chunks.extend(chunks)
+    # Chunk all files in thread pool (CPU-bound loop over potentially many files)
+    def _chunk_all():
+        result = []
+        for cf in code_files:
+            result.extend(chunk_code_file(cf.content, cf.file_path, cf.language, cf.repo_name))
+        return result
+
+    all_chunks = await asyncio.to_thread(_chunk_all)
 
     if not all_chunks:
         return IngestResponse(
@@ -68,11 +78,11 @@ async def ingest_github(body: GithubIngestRequest) -> IngestResponse:
             message="Files found but produced no chunks.",
         )
 
-    # Embed
+    # Embed in thread pool (ONNX inference — CPU-intensive)
     texts = [c.text for c in all_chunks]
-    embeddings = _embedder.embed_batch(texts)
+    embeddings = await asyncio.to_thread(_embedder.embed_batch, texts)
 
-    # Store in ChromaDB
+    # Build metadata
     ids = [
         f"{c.repo_name}::{c.file_path}::chunk_{c.chunk_index}"
         for c in all_chunks
@@ -89,7 +99,8 @@ async def ingest_github(body: GithubIngestRequest) -> IngestResponse:
         for c in all_chunks
     ]
 
-    _chroma.add_chunks(ids, embeddings, texts, metadatas)
+    # Store in thread pool (disk I/O)
+    await asyncio.to_thread(_chroma.add_chunks, ids, embeddings, texts, metadatas)
 
     return IngestResponse(
         status="ok",
@@ -108,9 +119,10 @@ async def ingest_pdf(file: UploadFile = File(...)) -> IngestResponse:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
-    # Save uploaded file to the PDF data directory
+    # Use only the basename to prevent path traversal attacks
+    safe_filename = Path(file.filename).name
     settings.ensure_directories()
-    dest = Path(settings.pdf_data_path) / file.filename
+    dest = Path(settings.pdf_data_path) / safe_filename
     try:
         with open(dest, "wb") as f:
             shutil.copyfileobj(file.file, f)
@@ -118,9 +130,9 @@ async def ingest_pdf(file: UploadFile = File(...)) -> IngestResponse:
         logger.exception("Failed to save uploaded PDF")
         raise HTTPException(status_code=500, detail=str(exc))
 
-    # Chunk
+    # Chunk in thread pool (PDF parsing — CPU + disk I/O)
     try:
-        chunks = chunk_pdf(str(dest))
+        chunks = await asyncio.to_thread(chunk_pdf, str(dest))
     except Exception as exc:
         logger.exception("PDF chunking failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -133,11 +145,11 @@ async def ingest_pdf(file: UploadFile = File(...)) -> IngestResponse:
             message="PDF produced no text chunks.",
         )
 
-    # Embed
+    # Embed in thread pool (ONNX inference — CPU-intensive)
     texts = [c.text for c in chunks]
-    embeddings = _embedder.embed_batch(texts)
+    embeddings = await asyncio.to_thread(_embedder.embed_batch, texts)
 
-    # Store in FAISS
+    # Store in thread pool (disk I/O)
     metadatas = [
         {
             "source_file": c.source_file,
@@ -147,7 +159,7 @@ async def ingest_pdf(file: UploadFile = File(...)) -> IngestResponse:
         }
         for c in chunks
     ]
-    _faiss.add_chunks(embeddings, metadatas, texts)
+    await asyncio.to_thread(_faiss.add_chunks, embeddings, metadatas, texts)
 
     return IngestResponse(
         status="ok",

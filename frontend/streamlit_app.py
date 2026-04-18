@@ -60,18 +60,18 @@ if "health_status" not in st.session_state:
 
 
 def _api_get(path: str, **kwargs) -> requests.Response | None:
-    """GET request to the backend; returns None on connection failure."""
+    """GET request to the backend; returns None on connection/timeout failure."""
     try:
         return requests.get(f"{API_URL}{path}", timeout=10, **kwargs)
-    except requests.ConnectionError:
+    except (requests.ConnectionError, requests.Timeout):
         return None
 
 
-def _api_post(path: str, **kwargs) -> requests.Response | None:
-    """POST request to the backend; returns None on connection failure."""
+def _api_post(path: str, timeout: int = 120, **kwargs) -> requests.Response | None:
+    """POST request to the backend; returns None on connection/timeout failure."""
     try:
-        return requests.post(f"{API_URL}{path}", timeout=120, **kwargs)
-    except requests.ConnectionError:
+        return requests.post(f"{API_URL}{path}", timeout=timeout, **kwargs)
+    except (requests.ConnectionError, requests.Timeout):
         return None
 
 
@@ -125,16 +125,17 @@ with st.sidebar:
         if not repo_url.strip():
             st.error("Please enter a repository URL.")
         else:
-            with st.spinner("Cloning and embedding..."):
+            with st.spinner("Cloning and embedding... (large repos may take a few minutes)"):
                 resp = _api_post(
                     "/ingest/github",
+                    timeout=600,
                     json={
                         "repo_url": repo_url.strip(),
                         "pat_token": pat_token.strip() or None,
                     },
                 )
             if resp is None:
-                st.error(f"❌ Cannot connect to backend at {API_URL}. Is it running?")
+                st.error(f"❌ Request failed or timed out. Check that the backend is running at {API_URL}.")
             elif resp.status_code == 200:
                 data = resp.json()
                 repo_name = data.get("repo_name", repo_url.split("/")[-1])
@@ -177,6 +178,7 @@ with st.sidebar:
             )
             resp = _api_post(
                 "/ingest/pdf",
+                timeout=300,
                 files={"file": (uploaded.name, uploaded.getvalue(), "application/pdf")},
             )
             if resp is None:

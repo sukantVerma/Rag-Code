@@ -9,7 +9,7 @@ from app.api.routes import ingest, query
 from app.api.schemas import HealthResponse
 from app.config import settings
 from app.ingestion.embedder import Embedder
-from app.llm.claude_client import GeminiClient
+from app.llm.claude_client import ClaudeClient
 from app.retrieval.retriever import MultiSourceRetriever
 from app.vectorstore.chroma_store import ChromaStore
 from app.vectorstore.faiss_store import FAISSStore
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     embedder = Embedder()
     _chroma = ChromaStore()
     _faiss_store = FAISSStore()
-    llm_client = GeminiClient()
+    llm_client = ClaudeClient()
     retriever = MultiSourceRetriever(_chroma, _faiss_store, embedder)
 
     # Inject dependencies into route modules

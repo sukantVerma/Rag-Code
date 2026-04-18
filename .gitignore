@@ -32,6 +32,9 @@ data/pdfs/*.pdf
 .DS_Store
 Thumbs.db
 
+# Logs
+logs/
+
 # Testing
 .pytest_cache/
 htmlcov/

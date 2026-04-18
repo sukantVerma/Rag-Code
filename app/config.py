@@ -12,10 +12,9 @@ class Settings(BaseSettings):
     # API keys
     github_pat: str = ""
 
-    # Gemini config
-    gemini_api_key: str = ""
-    gemini_embed_model: str = "gemini-2.0-flash"
-    gemini_llm_model: str = "gemini-2.0-flash"
+    # Anthropic (Claude) config
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-20250514"
     embedding_dimension: int = 384
     llm_max_tokens: int = 4096
 
